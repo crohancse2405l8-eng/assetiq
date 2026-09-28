@@ -5,7 +5,8 @@
   "type": "commonjs",
   "scripts": {
     "test:hindsight": "node scripts/test-hindsight.js",
-    "test:groq": "node scripts/test-groq.js"
+    "test:groq": "node scripts/test-groq.js",
+    "test:maintenance-brief": "node scripts/test-maintenance-brief.js"
   },
   "dependencies": {
     "@vectorize-io/hindsight-client": "^0.10.1",
