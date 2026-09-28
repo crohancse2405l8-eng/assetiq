@@ -1,3 +1,5 @@
+import { validateAssetId } from './asset.validator.js';
+
 const reportFields = [
   'assetId',
   'symptom',
@@ -14,6 +16,14 @@ export function validateReport(input) {
   for (const field of reportFields) {
     if (typeof input?.[field] !== 'string' || input[field].trim() === '') {
       errors.push(`${field} is required and must be a non-empty string`);
+    }
+  }
+
+  if (typeof input?.assetId === 'string') {
+    try {
+      validateAssetId(input.assetId.trim());
+    } catch {
+      errors.push('assetId must be a valid asset identifier');
     }
   }
 

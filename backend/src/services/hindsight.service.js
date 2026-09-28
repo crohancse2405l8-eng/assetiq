@@ -1,15 +1,33 @@
-function notImplemented(method) {
-  const error = new Error(`Hindsight service method '${method}' is not implemented`);
-  error.statusCode = 501;
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { HindsightService } = require('../../services/hindsight/hindsightService.js');
+let hindsightService;
+
+function getHindsightService() {
+  hindsightService ??= new HindsightService();
+  return hindsightService;
+}
+
+function serviceError(cause) {
+  const error = new Error('Hindsight service unavailable', { cause });
+  error.statusCode = 502;
+  error.code = 'HINDSIGHT_UNAVAILABLE';
   return error;
 }
 
 export async function retain(report) {
-  void report;
-  throw notImplemented('retain');
+  try {
+    return await getHindsightService().retainMaintenanceMemory(report);
+  } catch (cause) {
+    throw serviceError(cause);
+  }
 }
 
 export async function recall(assetId) {
-  void assetId;
-  throw notImplemented('recall');
+  try {
+    return await getHindsightService().recallAssetMemory(assetId);
+  } catch (cause) {
+    throw serviceError(cause);
+  }
 }
