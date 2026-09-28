@@ -1,0 +1,13 @@
+{
+  "name": "assetiq-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test:hindsight": "node scripts/test-hindsight.js"
+  },
+  "dependencies": {
+    "@vectorize-io/hindsight-client": "^0.10.1",
+    "dotenv": "^16.4.5"
+  }
+}
