@@ -4,10 +4,12 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test:hindsight": "node scripts/test-hindsight.js"
+    "test:hindsight": "node scripts/test-hindsight.js",
+    "test:groq": "node scripts/test-groq.js"
   },
   "dependencies": {
     "@vectorize-io/hindsight-client": "^0.10.1",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "groq-sdk": "^1.6.0"
   }
 }
