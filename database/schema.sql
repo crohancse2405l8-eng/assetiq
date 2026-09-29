@@ -1,34 +1,36 @@
-CREATE DATABASE IF NOT EXISTS assetiq_dev;
-USE assetiq_dev;
+CREATE DATABASE IF NOT EXISTS assetiq
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE assetiq;
 
 CREATE TABLE IF NOT EXISTS assets (
-    assetId VARCHAR(50) NOT NULL,
-    name VARCHAR(120) NOT NULL,
-    equipmentType VARCHAR(80) NOT NULL,
-    manufacturer VARCHAR(80) NOT NULL,
-    model VARCHAR(80) NOT NULL,
-    location VARCHAR(120) NOT NULL,
-    status VARCHAR(40) NOT NULL,
-    installDate DATE NULL,
-    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (assetId)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  asset_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  `type` VARCHAR(100) NOT NULL,
+  location VARCHAR(255) NULL,
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_assets_asset_id (asset_id)
+) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS maintenance_reports (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    assetId VARCHAR(50) NOT NULL,
-    symptom VARCHAR(255) NOT NULL,
-    diagnosis VARCHAR(255) NOT NULL,
-    action VARCHAR(255) NOT NULL,
-    partsUsed VARCHAR(255) DEFAULT NULL,
-    outcome VARCHAR(255) NOT NULL,
-    technicianNotes TEXT NULL,
-    timestamp DATETIME NOT NULL,
-    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_maintenance_event (assetId, timestamp, symptom),
-    KEY idx_maintenance_reports_asset (assetId),
-    CONSTRAINT fk_maintenance_reports_asset FOREIGN KEY (assetId) REFERENCES assets(assetId)
-        ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  asset_id VARCHAR(64) NOT NULL,
+  `timestamp` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  symptom TEXT NOT NULL,
+  diagnosis TEXT NOT NULL,
+  action TEXT NOT NULL,
+  parts_used TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  technician_notes TEXT NOT NULL,
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY idx_maintenance_reports_asset_timestamp (asset_id, `timestamp`, id),
+  CONSTRAINT fk_maintenance_reports_asset
+    FOREIGN KEY (asset_id)
+    REFERENCES assets (asset_id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT
+) ENGINE=InnoDB;
