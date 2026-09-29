@@ -1,14 +1,14 @@
 import { query } from '../db/mysql.js';
 
-const reportColumns = `id, asset_id AS assetId, \`timestamp\`, symptom, diagnosis,
-  action, parts_used AS partsUsed, outcome,
-  technician_notes AS technicianNotes, created_at AS createdAt`;
+const reportColumns = `id, assetId, \`timestamp\`, symptom, diagnosis,
+  action, partsUsed, outcome,
+  technicianNotes, createdAt`;
 
 export async function createReport(report) {
   const result = await query(
     `INSERT INTO maintenance_reports
-      (asset_id, symptom, diagnosis, action, parts_used, outcome, technician_notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      (assetId, symptom, diagnosis, action, partsUsed, outcome, technicianNotes, timestamp)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       report.assetId,
       report.symptom,
@@ -21,7 +21,10 @@ export async function createReport(report) {
   );
 
   const rows = await query(
-    `SELECT ${reportColumns} FROM maintenance_reports WHERE id = ? LIMIT 1`,
+    `SELECT ${reportColumns}
+     FROM maintenance_reports
+     WHERE id = ?
+     LIMIT 1`,
     [result.insertId],
   );
 
@@ -32,7 +35,7 @@ export async function findReportsByAssetId(assetId) {
   return query(
     `SELECT ${reportColumns}
      FROM maintenance_reports
-     WHERE asset_id = ?
+     WHERE assetId = ?
      ORDER BY \`timestamp\` DESC, id DESC`,
     [assetId],
   );
