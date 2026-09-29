@@ -1,14 +1,10 @@
-const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { createRequire } = require('module');
+const backendRequire = createRequire(path.resolve(__dirname, '../backend/package.json'));
+backendRequire('dotenv').config({ path: path.resolve(__dirname, '../backend/.env') });
+const mysql = backendRequire('mysql2/promise');
 
-const DB_NAME = process.env.MYSQL_DATABASE || 'assetiq_dev';
-const MYSQL_HOST = process.env.MYSQL_HOST || 'localhost';
-const MYSQL_PORT = process.env.MYSQL_PORT || '3306';
-const MYSQL_USER = process.env.MYSQL_USER || 'root';
-const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || '';
-const MYSQL_BIN = process.env.MYSQL_BIN || 'mysql';
-const schemaPath = path.resolve(__dirname, '../database/schema.sql');
+const DB_NAME = process.env.DB_NAME || 'assetiq';
 
 const assets = [
   {
@@ -416,190 +412,159 @@ const reports = [
   }
 ];
 
-function escapeSql(value) {
-  if (value === null || value === undefined) {
-    return 'NULL';
+function getDatabaseConfig() {
+  if (!process.env.DB_USER) {
+    throw new Error('DB_USER must be configured, matching the backend database settings.');
   }
-  const text = String(value).replace(/\\/g, '\\\\').replace(/'/g, "''");
-  return `'${text}'`;
+
+  return {
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT) || 3306,
+    database: DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD || '',
+    dateStrings: true,
+  };
 }
 
-function buildAssetInsert(asset) {
-  return [
-    'INSERT INTO assets (assetId, name, equipmentType, manufacturer, model, location, status, installDate)',
-    'VALUES (',
-    [
-      escapeSql(asset.assetId),
-      escapeSql(asset.name),
-      escapeSql(asset.equipmentType),
-      escapeSql(asset.manufacturer),
-      escapeSql(asset.model),
-      escapeSql(asset.location),
-      escapeSql(asset.status),
-      escapeSql(asset.installDate)
-    ].join(', '),
-    ') ON DUPLICATE KEY UPDATE',
-    'name=VALUES(name),',
-    'equipmentType=VALUES(equipmentType),',
-    'manufacturer=VALUES(manufacturer),',
-    'model=VALUES(model),',
-    'location=VALUES(location),',
-    'status=VALUES(status),',
-    'installDate=VALUES(installDate);'
-  ].join(' ');
+function createDatabaseConnection() {
+  return mysql.createConnection(getDatabaseConfig());
 }
 
-function buildReportInsert(report) {
-  return [
-    'INSERT INTO maintenance_reports (assetId, symptom, diagnosis, action, partsUsed, outcome, technicianNotes, timestamp)',
-    'VALUES (',
-    [
-      escapeSql(report.assetId),
-      escapeSql(report.symptom),
-      escapeSql(report.diagnosis),
-      escapeSql(report.action),
-      escapeSql(report.partsUsed),
-      escapeSql(report.outcome),
-      escapeSql(report.technicianNotes),
-      escapeSql(report.timestamp)
-    ].join(', '),
-    ') ON DUPLICATE KEY UPDATE',
-    'symptom=VALUES(symptom),',
-    'diagnosis=VALUES(diagnosis),',
-    'action=VALUES(action),',
-    'partsUsed=VALUES(partsUsed),',
-    'outcome=VALUES(outcome),',
-    'technicianNotes=VALUES(technicianNotes),',
-    'timestamp=VALUES(timestamp);'
-  ].join(' ');
+async function seedAsset(connection, asset) {
+  await connection.execute(
+    `INSERT INTO assets (asset_id, name, \`type\`, location)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE name = VALUES(name), \`type\` = VALUES(\`type\`), location = VALUES(location)`,
+    [asset.assetId, asset.name, asset.equipmentType, asset.location],
+  );
 }
 
-function getMysqlArgs() {
-  const args = ['-h', MYSQL_HOST, '-P', MYSQL_PORT, '-u', MYSQL_USER];
-  if (!MYSQL_PASSWORD || String(MYSQL_PASSWORD).length === 0) {
-    args.push('-p');
+async function seedReport(connection, report) {
+  const [existing] = await connection.execute(
+    'SELECT id FROM maintenance_reports WHERE asset_id = ? AND `timestamp` = ? AND symptom = ?',
+    [report.assetId, report.timestamp, report.symptom],
+  );
+
+  if (existing.length > 1) {
+    throw new Error(`Duplicate maintenance rows already exist for ${report.assetId} at ${report.timestamp}.`);
   }
-  return args;
-}
 
-function getMysqlEnv() {
-  const env = { ...process.env };
-  if (MYSQL_PASSWORD && String(MYSQL_PASSWORD).length > 0) {
-    env.MYSQL_PWD = MYSQL_PASSWORD;
+  const values = [
+    report.diagnosis,
+    report.action,
+    report.partsUsed,
+    report.outcome,
+    report.technicianNotes,
+  ];
+
+  if (existing.length === 1) {
+    await connection.execute(
+      `UPDATE maintenance_reports
+       SET diagnosis = ?, action = ?, parts_used = ?, outcome = ?, technician_notes = ?
+       WHERE id = ?`,
+      [...values, existing[0].id],
+    );
+    return;
   }
-  return env;
+
+  await connection.execute(
+    `INSERT INTO maintenance_reports
+      (asset_id, \`timestamp\`, symptom, diagnosis, action, parts_used, outcome, technician_notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [report.assetId, report.timestamp, report.symptom, ...values],
+  );
 }
 
-function runMysql(args, { input = null, printOutput = false } = {}) {
-  const combinedInput = input === null || input === undefined ? '' : String(input);
-  const finalInput = (!MYSQL_PASSWORD || String(MYSQL_PASSWORD).length === 0) ? `${combinedInput}\n` : combinedInput;
-
-  const result = spawnSync(MYSQL_BIN, [
-    ...getMysqlArgs(),
-    ...args
-  ], {
-    encoding: 'utf8',
-    input: finalInput,
-    env: getMysqlEnv()
-  });
-
-  if (result.error) {
-    if (result.error.code === 'ENOENT') {
-      throw new Error(
-        `MySQL executable not found. Set MYSQL_BIN to the mysql client path or add the mysql client to your PATH. Example: $env:MYSQL_BIN = 'C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysql.exe'`
-      );
+async function assertSeededData(connection) {
+  for (const asset of assets) {
+    const [rows] = await connection.execute(
+      'SELECT asset_id, name, `type`, location FROM assets WHERE asset_id = ?',
+      [asset.assetId],
+    );
+    const row = rows[0];
+    if (rows.length !== 1 || row.name !== asset.name || row.type !== asset.equipmentType || row.location !== asset.location) {
+      throw new Error(`Asset verification failed for ${asset.assetId}.`);
     }
-    throw result.error;
   }
 
-  if (result.status !== 0) {
-    const errorText = (result.stderr || '') + (result.stdout || '');
-    throw new Error(`MySQL command failed with exit code ${result.status}: ${errorText.trim()}`);
+  for (const report of reports) {
+    const [rows] = await connection.execute(
+      `SELECT symptom, diagnosis, action, parts_used, outcome, technician_notes,
+              DATE_FORMAT(\`timestamp\`, '%Y-%m-%d %H:%i:%s') AS report_timestamp
+       FROM maintenance_reports
+       WHERE asset_id = ? AND \`timestamp\` = ? AND symptom = ?`,
+      [report.assetId, report.timestamp, report.symptom],
+    );
+    const row = rows[0];
+    if (
+      rows.length !== 1 ||
+      row.diagnosis !== report.diagnosis ||
+      row.action !== report.action ||
+      row.parts_used !== report.partsUsed ||
+      row.outcome !== report.outcome ||
+      row.technician_notes !== report.technicianNotes ||
+      row.report_timestamp !== report.timestamp
+    ) {
+      throw new Error(`Maintenance report verification failed for ${report.assetId} at ${report.timestamp}.`);
+    }
   }
 
-  if (printOutput && result.stdout.trim()) {
-    console.log(result.stdout.trim());
+  const assetIds = assets.map((asset) => asset.assetId);
+  const placeholders = assetIds.map(() => '?').join(', ');
+  const [noHistoryAssets] = await connection.execute(
+    `SELECT a.asset_id, a.name
+     FROM assets a
+     LEFT JOIN maintenance_reports r ON r.asset_id = a.asset_id
+     WHERE a.asset_id IN (${placeholders}) AND r.id IS NULL
+     ORDER BY a.asset_id`,
+    assetIds,
+  );
+  const expectedNoHistory = assets
+    .filter((asset) => !reports.some((report) => report.assetId === asset.assetId))
+    .map((asset) => asset.assetId);
+  const actualNoHistory = noHistoryAssets.map((asset) => asset.asset_id);
+  if (JSON.stringify(actualNoHistory) !== JSON.stringify(expectedNoHistory)) {
+    throw new Error('No-history demo asset verification failed.');
   }
 
-  return result.stdout.trim();
+  console.log(`Verified ${assets.length} assets and ${reports.length} dated reports in ${DB_NAME}.`);
+  console.log(`Assets without history: ${noHistoryAssets.map((asset) => asset.asset_id).join(', ') || 'none'}`);
 }
 
-function seedDatabase() {
-  const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-  runMysql(['-e', `CREATE DATABASE IF NOT EXISTS ${DB_NAME}; USE ${DB_NAME};`]);
-  runMysql(['-e', schemaSql]);
+async function seedDatabase() {
+  const connection = await createDatabaseConnection();
 
-  const seedSql = [
-    `USE ${DB_NAME};`,
-    ...assets.map(buildAssetInsert),
-    ...reports.map(buildReportInsert)
-  ].join('\n');
-
-  runMysql(['-e', seedSql]);
-  console.log(`Seeded ${assets.length} assets and ${reports.length} maintenance reports into ${DB_NAME}.`);
-}
-
-function runValidation() {
-  const validationSql = `
-    SELECT 'asset-count' AS label, COUNT(*) AS value FROM assets
-    UNION ALL
-    SELECT 'report-count', COUNT(*) FROM maintenance_reports
-    UNION ALL
-    SELECT 'duplicate-assets', COUNT(*) FROM (
-      SELECT assetId FROM assets GROUP BY assetId HAVING COUNT(*) > 1
-    ) duplicates
-    UNION ALL
-    SELECT 'orphan-reports', COUNT(*) FROM maintenance_reports r LEFT JOIN assets a ON a.assetId = r.assetId WHERE a.assetId IS NULL
-    UNION ALL
-    SELECT 'hvac-204-reports', COUNT(*) FROM maintenance_reports WHERE assetId = 'HVAC-204'
-    UNION ALL
-    SELECT 'new-no-history-assets', COUNT(*) FROM (
-      SELECT a.assetId FROM assets a LEFT JOIN maintenance_reports r ON r.assetId = a.assetId WHERE r.id IS NULL
-    ) no_history
-    UNION ALL
-    SELECT 'normal-assets', COUNT(*) FROM (
-      SELECT assetId FROM maintenance_reports GROUP BY assetId HAVING COUNT(*) = 1
-    ) normal_assets
-    UNION ALL
-    SELECT 'recurring-assets', COUNT(*) FROM (
-      SELECT assetId FROM maintenance_reports GROUP BY assetId HAVING COUNT(*) >= 2
-    ) recurring_assets;
-  `;
-
-  const output = runMysql([DB_NAME], { input: validationSql });
-  console.log('\nValidation summary:\n' + output);
-
-  const hvac204Sql = `
-    SELECT assetId, timestamp, symptom, diagnosis, action, partsUsed, outcome, technicianNotes
-    FROM maintenance_reports
-    WHERE assetId = 'HVAC-204'
-    ORDER BY timestamp ASC;
-  `;
-
-  console.log('\nHVAC-204 chronological maintenance history:\n');
-  console.log(runMysql([DB_NAME], { input: hvac204Sql }));
-
-  const noHistoryAssetsSql = `
-    SELECT a.assetId, a.name
-    FROM assets a
-    LEFT JOIN maintenance_reports r ON r.assetId = a.assetId
-    WHERE r.id IS NULL
-    ORDER BY a.assetId;
-  `;
-
-  console.log('\nNew/no-history assets:\n');
-  console.log(runMysql([DB_NAME], { input: noHistoryAssetsSql }));
-}
-
-function main() {
   try {
-    seedDatabase();
-    runValidation();
-    console.log('\nDemo data seeding and validation completed successfully.');
+    await connection.beginTransaction();
+    for (const asset of assets) await seedAsset(connection, asset);
+    for (const report of reports) await seedReport(connection, report);
+    await connection.commit();
+    await assertSeededData(connection);
+
+    const [history] = await connection.execute(
+      `SELECT \`timestamp\`, symptom, diagnosis, action, parts_used, outcome, technician_notes
+       FROM maintenance_reports WHERE asset_id = ? ORDER BY \`timestamp\` ASC`,
+      ['HVAC-204'],
+    );
+    console.log('HVAC-204 verified history:', JSON.stringify(history, null, 2));
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    await connection.end();
+  }
+}
+
+async function main() {
+  try {
+    await seedDatabase();
   } catch (error) {
     console.error('Seeding failed:', error.message);
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { assets, reports, createDatabaseConnection };

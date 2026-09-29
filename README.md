@@ -21,49 +21,20 @@ AssetIQ remembers the maintenance history of physical equipment and gives techni
 - seed-data/ - Demo data
 - docs/ - Project documentation
 
-## Demo database setup
+## Demo data setup
 
-Use environment variables for your local MySQL connection; do not commit credentials.
-
-### PowerShell
+Apply the existing `database/schema.sql` to the `assetiq` database before seeding. The demo runner uses `mysql2` from the backend and the same `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` settings as the API. It loads these settings from `backend/.env` when present; process environment variables take precedence. Do not commit local credentials.
 
 ```powershell
-$env:MYSQL_HOST = 'localhost'
-$env:MYSQL_PORT = '3306'
-$env:MYSQL_USER = 'root'
-$env:MYSQL_PASSWORD = ''
-$env:MYSQL_DATABASE = 'assetiq_dev'
-$env:MYSQL_BIN = 'C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe'
-
-& $env:MYSQL_BIN -h $env:MYSQL_HOST -P $env:MYSQL_PORT -u $env:MYSQL_USER -p -e "CREATE DATABASE IF NOT EXISTS $env:MYSQL_DATABASE; USE $env:MYSQL_DATABASE; SOURCE .\database\schema.sql;"
 node .\seed-data\seed-demo.js
 ```
 
-If your local MySQL binary is in PATH, you can omit `MYSQL_BIN` and use:
+The seed preserves the 20 synthetic assets and 20 dated maintenance reports. It updates matching asset IDs and report identities rather than duplicating them on repeated runs. Only columns supported by the backend schema are written.
+
+To make those historical reports available to the maintenance brief, configure `HINDSIGHT_BASE_URL` and `HINDSIGHT_API_KEY` in `backend/.env`, then run:
 
 ```powershell
-$env:MYSQL_HOST = 'localhost'
-$env:MYSQL_PORT = '3306'
-$env:MYSQL_USER = 'root'
-$env:MYSQL_PASSWORD = ''
-$env:MYSQL_DATABASE = 'assetiq_dev'
-
-& mysql -h $env:MYSQL_HOST -P $env:MYSQL_PORT -u $env:MYSQL_USER -p -e "CREATE DATABASE IF NOT EXISTS $env:MYSQL_DATABASE; USE $env:MYSQL_DATABASE; SOURCE .\database\schema.sql;"
-node .\seed-data\seed-demo.js
+node .\seed-data\retain-demo-history.js
 ```
 
-### Linux/macOS
-
-```bash
-export MYSQL_HOST=localhost
-export MYSQL_PORT=3306
-export MYSQL_USER=root
-export MYSQL_PASSWORD=''
-export MYSQL_DATABASE=assetiq_dev
-export MYSQL_BIN=mysql
-
-mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" -p -e "CREATE DATABASE IF NOT EXISTS $MYSQL_DATABASE; USE $MYSQL_DATABASE; SOURCE ./database/schema.sql;"
-node ./seed-data/seed-demo.js
-```
-
-The runner expects the mysql client to be available either at `MYSQL_BIN` or on your PATH. If not found, it raises a clear error telling you to set `MYSQL_BIN`.
+The bootstrap uses the canonical demo report fixtures and the existing backend Hindsight service. It checks recall for each report before retaining it and verifies the resulting memory. New reports submitted through `POST /api/reports` continue to use the backend's normal retention flow.
