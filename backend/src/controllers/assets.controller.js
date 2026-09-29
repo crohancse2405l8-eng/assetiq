@@ -2,6 +2,11 @@ import * as assetRepository from '../repositories/asset.repository.js';
 import { generateAssetBrief } from '../services/maintenanceBrief.service.js';
 import { validateAssetId } from '../validators/asset.validator.js';
 
+export async function getAssets(req, res) {
+  const assets = await assetRepository.getAssets();
+  res.json(assets);
+}
+
 export async function getAsset(req, res) {
   const assetId = validateAssetId(req.params.id);
   const asset = await assetRepository.getAssetById(assetId);

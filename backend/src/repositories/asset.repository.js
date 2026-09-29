@@ -1,10 +1,38 @@
 import { query } from '../db/mysql.js';
 
+export async function getAssets() {
+  return query(
+    `SELECT
+       assetId,
+       name,
+       equipmentType,
+       equipmentType AS type,
+       manufacturer,
+       model,
+       location,
+       status,
+       installDate,
+       createdAt
+     FROM assets
+     ORDER BY assetId ASC`,
+  );
+}
+
 export async function getAssetById(assetId) {
   const rows = await query(
-    `SELECT id, asset_id AS assetId, name, \`type\`, location, created_at AS createdAt
+    `SELECT
+       assetId,
+       name,
+       equipmentType,
+       equipmentType AS type,
+       manufacturer,
+       model,
+       location,
+       status,
+       installDate,
+       createdAt
      FROM assets
-     WHERE asset_id = ?
+     WHERE assetId = ?
      LIMIT 1`,
     [assetId],
   );
